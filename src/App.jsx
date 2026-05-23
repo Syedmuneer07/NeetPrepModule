@@ -88,6 +88,8 @@ function buildSchedule() {
 }
 
 const INIT_SCHEDULE = buildSchedule();
+const STORAGE_KEY = "neet_war_room_data";
+const LEGACY_SCHEDULE_KEY = "neet_v3_schedule";
 
 const NEET_DATE = new Date("2026-06-21T08:00:00");
 
@@ -111,13 +113,53 @@ const SUB = {
 // ═══════════════════════════════════════════════════════════
 //  HOOKS
 // ═══════════════════════════════════════════════════════════
-function useLocalStorage(key, init) {
-  const [val, setVal] = useState(() => {
-    try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : init; }
-    catch { return init; }
-  });
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }, [key, val]);
-  return [val, setVal];
+function createStoredData(schedule = INIT_SCHEDULE) {
+  return {
+    schedule,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function readStoredData() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed && Array.isArray(parsed.schedule)) return parsed;
+    }
+
+    const legacySchedule = localStorage.getItem(LEGACY_SCHEDULE_KEY);
+    if (legacySchedule) {
+      const parsedLegacySchedule = JSON.parse(legacySchedule);
+      if (Array.isArray(parsedLegacySchedule)) {
+        const migratedData = createStoredData(parsedLegacySchedule);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(migratedData));
+        localStorage.removeItem(LEGACY_SCHEDULE_KEY);
+        return migratedData;
+      }
+    }
+  } catch {}
+
+  return createStoredData();
+}
+
+function useStoredSchedule() {
+  const [data, setData] = useState(readStoredData);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {}
+  }, [data]);
+
+  const setSchedule = useCallback(update => {
+    setData(prev => {
+      const nextSchedule = typeof update === "function" ? update(prev.schedule) : update;
+      return createStoredData(nextSchedule);
+    });
+  }, []);
+
+  return [data.schedule, setSchedule];
 }
 
 function useCountdown() {
@@ -595,7 +637,7 @@ function Sidebar({ active, setActive, completionPct, doneTasks }) {
 //  MAIN APP
 // ═══════════════════════════════════════════════════════════
 export default function App() {
-  const [schedule, setSchedule] = useLocalStorage("neet_v3_schedule", INIT_SCHEDULE);
+  const [schedule, setSchedule] = useStoredSchedule();
   const [active, setActive] = useState("dashboard");
   const [expandedDay, setExpandedDay] = useState(null);
   const [search, setSearch] = useState("");
